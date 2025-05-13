@@ -2,7 +2,7 @@
 param(
     [string]$BackupFile = "backup.sql",
     [string]$ContainerName = "nexus_db",
-    [string]$DatabaseName = "NexusPlataformaDb",
+    [string]$DatabaseName = "NexusDB",
     [string]$Username = "postgres"
 )
 
