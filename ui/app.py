@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
@@ -6,7 +7,7 @@ import os
 import threading
 import customtkinter as ctk
 
-from config.settings import APP_TITLE, DEFAULT_WIDTH, DEFAULT_HEIGHT, DEFAULT_CONNECTION_URL, DEFAULT_BACKUP_FILENAME
+from config.settings import APP_TITLE, DEFAULT_WIDTH, DEFAULT_HEIGHT, DEFAULT_CONNECTION_URL, DEFAULT_BACKUP_FILENAME, DEFAULT_REMOTE_CONNECTION_URL
 from core.system_utils import get_system_info, get_available_tools, get_install_instructions
 from core.backup_manager import BackupManager
 from core.restore_manager import RestoreManager
@@ -30,6 +31,7 @@ class PostgreSQLBackupApp(ctk.CTk):
         self.container_name_var = ctk.StringVar(value="nexus_db")
         self.database_name_var = ctk.StringVar(value="NexusDB")
         self.username_var = ctk.StringVar(value="postgres")
+        self.restore_connection_var = ctk.StringVar(value=DEFAULT_REMOTE_CONNECTION_URL)
         
         # Detectar sistema operativo
         self.system_info = get_system_info()
@@ -115,10 +117,12 @@ class PostgreSQLBackupApp(ctk.CTk):
             self.container_name_var,
             self.database_name_var,
             self.username_var,
+            self.restore_connection_var,
             self.browse_backup_file,
-            self.start_restore
+            self.start_restore,
+            self.start_remote_restore
         )
-        self.restore_frame.pack(fill="x", padx=10, pady=10)
+        self.restore_frame.pack(fill="both", expand=True, padx=10, pady=10)
         
         # Panel de salida para restauración
         output_label = ctk.CTkLabel(
@@ -168,6 +172,14 @@ class PostgreSQLBackupApp(ctk.CTk):
         
         # Iniciar restauración en un hilo separado
         threading.Thread(target=self.perform_restore, daemon=True).start()
+        
+    def start_remote_restore(self):
+        """Inicia el proceso de restauración remota en un hilo separado"""
+        # Limpiar la salida actual
+        self.restore_output_console.clear()
+        
+        # Iniciar restauración remota en un hilo separado
+        threading.Thread(target=self.perform_remote_restore, daemon=True).start()
     
     def perform_backup(self):
         """Realiza el backup de la base de datos"""
@@ -210,7 +222,7 @@ class PostgreSQLBackupApp(ctk.CTk):
         else:
             self.log("\n✗ No hay herramientas disponibles para crear el backup.")
             self.log("\n" + get_install_instructions())
-        
+            
         # Mostrar instrucciones de restauración si el backup fue exitoso
         if backup_successful:
             instructions = self.backup_manager.get_restore_instructions(conn_info, final_backup)
@@ -232,7 +244,7 @@ class PostgreSQLBackupApp(ctk.CTk):
         
         # Mostrar cabecera
         self.log("="*50)
-        self.log(f"INICIANDO RESTAURACIÓN DE BASE DE DATOS")
+        self.log(f"INICIANDO RESTAURACIÓN DE BASE DE DATOS (DOCKER LOCAL)")
         self.log(f"Sistema operativo: {sys.platform}")
         self.log(f"Archivo de backup: {backup_file}")
         self.log("="*50)
@@ -254,3 +266,41 @@ class PostgreSQLBackupApp(ctk.CTk):
             self.restore_manager.restore_with_bash(
                 backup_file, container_name, database_name, username
             )
+    
+    def perform_remote_restore(self):
+        """Realiza la restauración de la base de datos a un servidor remoto"""
+        # Obtener parámetros
+        backup_file = self.backup_file_var.get()
+        connection_url = self.restore_connection_var.get()
+        
+        # Verificar que el archivo existe
+        if not os.path.isfile(backup_file):
+            self.log(f"✗ Error: El archivo de backup {backup_file} no existe.")
+            return
+        
+        # Verificar que la URL de conexión no está vacía
+        if not connection_url:
+            self.log(f"✗ Error: La URL de conexión está vacía.")
+            return
+        
+        # Mostrar cabecera
+        self.log("="*50)
+        self.log(f"INICIANDO RESTAURACIÓN REMOTA DE BASE DE DATOS")
+        self.log(f"Sistema operativo: {sys.platform}")
+        self.log(f"Archivo de backup: {backup_file}")
+        self.log(f"URL de conexión: {connection_url}")
+        self.log("="*50)
+        
+        # Verificar herramientas disponibles
+        tools = get_available_tools()
+        self.log(f"\nVerificación de herramientas:")
+        self.log(f"psql: {'✓ disponible' if tools['has_pg_dump'] else '✗ no disponible'}")
+        
+        if not tools['has_pg_dump']:
+            self.log("\n✗ No hay herramientas disponibles para realizar la restauración remota.")
+            self.log("\n" + get_install_instructions())
+            return
+        
+        # Ejecutar restauración remota
+        self.log("\n→ Iniciando restauración remota...")
+        self.restore_manager.restore_with_connection_url(backup_file, connection_url)
